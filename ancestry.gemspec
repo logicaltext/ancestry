@@ -14,5 +14,5 @@ Gem::Specification.new do |s|
 
   s.files = FileList['ancestry.gemspec', '*.rb', 'lib/**/*.rb', 'test/*', 'Rakefile', 'MIT-LICENSE', 'README.rdoc']
   
-  s.add_dependency 'activerecord', '>= 2.1.0'
+  s.add_dependency 'activerecord', '>= 3.0.0.beta'
 end
