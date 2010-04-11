@@ -215,7 +215,7 @@ Additionally, if you think something is wrong with your depth cache:
 
 = Tests
 
-The Ancestry gem comes with a unit test suite consisting of about 1800 assertions in about 30 tests. It takes about 10 seconds to run on sqlite. To run it yourself, install Ancestry as a plugin into a Rails application, go to the ancestry folder and type 'rake'. The test suite is located in 'test/has_ancestry_test.rb'.
+The Ancestry gem comes with a unit test suite consisting of about 1800 assertions in about 30 tests. It takes about 20 seconds to run on sqlite. To run it yourself, run 'rake test'. The test suite is located in +test/has_ancestry_test.rb+.
 
 = Internals
 
