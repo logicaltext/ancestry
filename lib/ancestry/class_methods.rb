@@ -1,127 +1,218 @@
 module Ancestry
   module ClassMethods
-    # Fetch tree node if necessary
-    def to_node object
-      if object.is_a?(self.base_class) then object else find(object) end
+    # Returns the tree node given either the node itself or the node's id.
+    #
+    # @param  [Object, Integer] arg The node or id of the node to return.
+    # @return [Object] The node.
+    #
+    def to_node(arg)
+      arg.is_a?(self.base_class) ? arg : find(arg)
     end 
     
-    # Scope on relative depth options
-    def scope_depth depth_options, depth
-      depth_options.inject(self.base_class) do |scope, option|
+		# Returns a dynamic scope based on the supplied relative depth options.
+    #
+    # @param  [Hash] depth_options The depth options.
+    # @option depth_options [Integer] :key The relative depth of the node in
+    #         question, where +:key+ is one of the keys defined in
+    #         {Ancestry::DEPTH_SCOPES}.
+    # @param  [Integer] depth The depth of the node in question.
+    # @return [ActiveRecord::NamedScope::Scope, self] The +NamedScope+ or
+    #         +self+ if +depth_options+ is an empty hash.
+    # @raise  [Ancestry::AncestryException] If supplied key of depth_options
+    #         hash is not included in {Ancestry::DEPTH_SCOPES}.
+    #
+    def scope_depth(depth_options, depth)
+      depth_options.inject(self.base_class) do |klass, option|
         scope_name, relative_depth = option
-        if Ancestry::DEPTH_SCOPES.keys.include? scope_name
-          scope.send scope_name, depth + relative_depth
+        if Ancestry::DEPTH_SCOPES.keys.include?(scope_name)
+          klass.send(scope_name, depth + relative_depth)
         else
-          raise Ancestry::AncestryException.new("Unknown depth option: #{scope_name}.")
+          msg = "Unknown depth option: #{scope_name}."
+          raise Ancestry::AncestryException.new(msg)
         end
       end
     end
 
-    # Orphan strategy writer
-    def orphan_strategy= orphan_strategy
-      # Check value of orphan strategy, only rootify, restrict or destroy is allowed
+    # Sets the orphan strategy for the class.
+    #
+    # @param  [Symbol] orphan_strategy A symbol defined in
+    #         {Ancestry::ORPHAN_STRATEGIES}.
+    # @return [Symbol] The supplied orphan strategy.
+    # @raise  [Ancestry::AncestryException] If supplied +orphan_strategy+ is
+    #         not included in {Ancestry::ORPHAN_STRATEGIES}.
+    #
+    def orphan_strategy=(orphan_strategy)
       if Ancestry::ORPHAN_STRATEGIES.include?(orphan_strategy)
         class_variable_set :@@orphan_strategy, orphan_strategy
       else
-        raise Ancestry::AncestryException.new("Invalid orphan strategy, valid ones are :rootify, :restrict and :destroy.")
-      end
-    end
-    
-    # Arrangement
-    def arrange options = {}
-      scope =
-        if options[:order].nil?
-          self.base_class.ordered_by_ancestry
-        else
-          self.base_class.ordered_by_ancestry_and options.delete(:order)
-        end
-      # Get all nodes ordered by ancestry and start sorting them into an empty hash
-      scope.all(options).inject({}) do |arranged_nodes, node|
-        # Find the insertion point for that node by going through its ancestors
-        node.ancestor_ids.inject(arranged_nodes) do |insertion_point, ancestor_id|
-          insertion_point.each do |parent, children|
-            # Change the insertion point to children if node is a descendant of this parent
-            insertion_point = children if ancestor_id == parent.id
-          end; insertion_point
-        end[node] = {}; arranged_nodes
+        raise Ancestry::AncestryException.new(invalid_orphan_strategy_message)
       end
     end
 
-    # Integrity checking
+    # Returns a subtree in the form of nested hashes. The hashes will be
+    # ordered if using Ruby 1.9+ and an +:order+ paramater is supplied.
+    #
+    # @param  [Hash] options The options to use for creating the representation
+    #                of the specified subtree.
+    # @option opts [Symbol] :order The order in which to arrange the
+    #              collection of nodes.
+    # @return [Hash<Hash>] A hash of hashes.
+    #
+    def arrange(opts = {})
+      scope = arrange_scope_based_on_options(opts)
+      scope.all.inject({}) do |arranged_nodes, node|
+        insertion_point = find_insertion_point_for_node(arranged_nodes, node)
+        insertion_point[node] = {}
+        arranged_nodes
+      end
+    end
+
+    # Checks the integrity of all nodes.
+    #
+    # @raise  [Ancestry::AncestryException,
+    #          Ancestry::AncestryIntegrityException]
+    # @return nil If all nodes have maintained integrity.
+    #
     def check_ancestry_integrity!
       parents = {}
-      # For each node ...
       self.base_class.all.each do |node|
-        # ... check validity of ancestry column
-        if !node.valid? and node.errors[node.class.ancestry_column].any?
-          raise Ancestry::AncestryIntegrityException.new("Invalid format for ancestry column of node #{node.id}: #{node.read_attribute node.ancestry_column}.")
-        end
-        # ... check that all ancestors exist
-        node.ancestor_ids.each do |ancestor_id|
-          unless exists? ancestor_id
-            raise Ancestry::AncestryIntegrityException.new("Reference to non-existent node in node #{node.id}: #{ancestor_id}.")
-          end
-        end
-        # ... check that all node parents are consistent with values observed earlier
+
+        raise_error_for_invalid_ancestry_column(node)
+        raise_error_for_any_nonexistent_ancestors(node)
+
         node.path_ids.zip([nil] + node.path_ids).each do |node_id, parent_id|
-          parents[node_id] = parent_id unless parents.has_key? node_id
+          parents[node_id] = parent_id unless parents.has_key?(node_id)
           unless parents[node_id] == parent_id
-            raise Ancestry::AncestryIntegrityException.new("Conflicting parent id in node #{node.id}: #{parent_id || 'nil'} for node #{node_id}, expecting #{parents[node_id] || 'nil'}")
+            msg  = "Conflicting parent id in node #{node.id}:"
+            msg += " #{parent_id || 'nil'} for node #{node_id},"
+            msg += " expecting #{parents[node_id] || 'nil'}"
+            raise Ancestry::AncestryIntegrityException.new(msg)
           end
         end
+
       end
     end
 
-    # Integrity restoration
+    # Restores the integrity of all nodes.
+    #
+    # @return nil.
+    #
     def restore_ancestry_integrity!
       parents = {}
-      # For each node ...
       self.base_class.all.each do |node|
-        # ... set its ancestry to nil if invalid
-        if node.errors[node.class.ancestry_column].any?
-          node.without_ancestry_callbacks do
-            node.update_attributes :ancestry => nil
-          end
-        end
-        # ... save parent of this node in parents array if it exists
+        set_ancestry_attribute_to_nil_if_node_is_invalid(node)
+
         parents[node.id] = node.parent_id if exists? node.parent_id
 
-        # Reset parent id in array to nil if it introduces a cycle
+        # Reset parent id in hash to nil if it introduces a cycle.
         parent = parents[node.id]
         until parent.nil? || parent == node.id
           parent = parents[parent]
         end
         parents[node.id] = nil if parent == node.id 
       end
-      # For each node ...
+
       self.base_class.all.each do |node|
-        # ... rebuild ancestry from parents array
+        # Rebuild ancestry from parents hash.
         ancestry, parent = nil, parents[node.id]
         until parent.nil?
-          ancestry, parent = if ancestry.nil? then parent else "#{parent}/#{ancestry}" end, parents[parent]
+          ancestry = ancestry.nil? ? parent : "#{parent}/#{ancestry}"
+          parent   = parents[parent]
         end
         node.without_ancestry_callbacks do
           node.update_attributes node.ancestry_column => ancestry
         end
       end
     end
-    
-    # Build ancestry from parent id's for migration purposes
-    def build_ancestry_from_parent_ids! parent_id = nil, ancestry = nil
+
+    # Builds ancestry from parent id's for migration purposes.
+    #
+    # @param  [Integer] parent_id The parent id for updating a specific node.
+    # @param  [String] ancestry The value of the ancestry column for updating
+    #         a specific node.
+    # @return [Array] The array of nodes generated by iterating over
+    #         +self.base_class.where(:parent_id => parent_id)+.
+    #
+    def build_ancestry_from_parent_ids!(parent_id = nil, ancestry = nil)
       self.base_class.where(:parent_id => parent_id).each do |node|
         node.without_ancestry_callbacks do
           node.update_attribute ancestry_column, ancestry
         end
-        build_ancestry_from_parent_ids! node.id, if ancestry.nil? then "#{node.id}" else "#{ancestry}/#{node.id}" end
+        ancestry = ancestry.nil? ? "#{node.id}" : "#{ancestry}/#{node.id}"
+        build_ancestry_from_parent_ids!(node.id, ancestry)
       end
     end
-    
-    # Rebuild depth cache if it got corrupted or if depth caching was just turned on
+
+    # Rebuild the depth cache in case it is corrupted or if depth caching has
+    # just been turned on.
+    #
+    # @raise  [Ancestry::AncestryException] If there is no depth caching for
+    #         this model.
+    # @return [Array] The array of nodes generated by +self.base_class.all+.
+    #
     def rebuild_depth_cache!
-      raise Ancestry::AncestryException.new("Cannot rebuild depth cache for model without depth caching.") unless respond_to? :depth_cache_column
+      unless respond_to?(:depth_cache_column)
+        msg = "Cannot rebuild depth cache for model without depth caching."
+        raise Ancestry::AncestryException.new(msg)
+      end
       self.base_class.all.each do |node|
         node.update_attribute depth_cache_column, node.depth
       end
     end
+
+
+    private
+
+    def invalid_orphan_strategy_message
+      allowed = Ancestry::ORPHAN_STRATEGIES.map { |x| ":#{x.to_s}" }
+      allowed[allowed.size-1] = "and #{allowed.last}"
+      msg = "Invalid orphan strategy, valid ones are #{allowed.join(', ')}"
+    end
+
+    def arrange_scope_based_on_options(opts)
+      if opts[:order].nil?
+        scope = self.base_class.ordered_by_ancestry
+      else
+        scope = self.base_class.ordered_by_ancestry_and(opts.delete(:order))
+      end
+    end
+
+    def find_insertion_point_for_node(node_hash, node)
+      node.ancestor_ids.inject(node_hash) do |insertion_point, ancestor_id|
+        insertion_point.each do |parent, children|
+          # Change the insertion point to children if node is a descendant
+          # of this parent
+          insertion_point = children if ancestor_id == parent.id
+        end
+        insertion_point
+      end
+    end
+
+    def raise_error_for_invalid_ancestry_column(node)
+      if !node.valid? and node.errors[node.class.ancestry_column].any?
+        msg  = "Invalid format for ancestry column of node #{node.id}:"
+        msg += " #{node.read_attribute node.ancestry_column}."
+        raise Ancestry::AncestryIntegrityException.new(msg)
+      end
+    end
+
+    def raise_error_for_any_nonexistent_ancestors(node)
+      node.ancestor_ids.each do |ancestor_id|
+        unless exists?(ancestor_id)
+          msg  = "Reference to non-existent node in node #{node.id}:"
+          msg += " #{ancestor_id}."
+          raise Ancestry::AncestryIntegrityException.new(msg)
+        end
+      end
+    end
+
+    def set_ancestry_attribute_to_nil_if_node_is_invalid(node)
+      if node.errors[node.class.ancestry_column].any?
+        node.without_ancestry_callbacks do
+          node.update_attributes :ancestry => nil
+        end
+      end
+    end
+
   end
 end
