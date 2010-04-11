@@ -2,8 +2,8 @@ require 'ancestry/class_methods'
 require 'ancestry/instance_methods'
 require 'ancestry/exceptions'
 
-class << ActiveRecord::Base
-  def has_ancestry options = {}
+class ActiveRecord::Base
+  def self.has_ancestry options = {}
     # Check options
     raise Ancestry::AncestryException.new("Options for has_ancestry must be in a hash.") unless options.is_a? Hash
     options.each do |key, value|
@@ -75,7 +75,9 @@ class << ActiveRecord::Base
   end
   
   # Alias has_ancestry with acts_as_tree, if it's available.
-  if !respond_to?(:acts_as_tree)
-    alias_method :acts_as_tree, :has_ancestry
+  class << self
+    if !respond_to?(:acts_as_tree)
+      alias_method :acts_as_tree, :has_ancestry
+    end
   end
 end
