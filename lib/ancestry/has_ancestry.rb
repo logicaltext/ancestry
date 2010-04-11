@@ -1,3 +1,4 @@
+require 'ancestry/constants'
 require 'ancestry/class_methods'
 require 'ancestry/instance_methods'
 require 'ancestry/exceptions'
@@ -66,7 +67,7 @@ class ActiveRecord::Base
     end
     
     # Create named scopes for depth
-    {:before_depth => '<', :to_depth => '<=', :at_depth => '=', :from_depth => '>=', :after_depth => '>'}.each do |scope_name, operator|
+    Ancestry::DEPTH_SCOPES.each do |scope_name, operator|
       scope scope_name, lambda { |depth|
         raise Ancestry::AncestryException.new("Named scope '#{scope_name}' is only available when depth caching is enabled.") unless options[:cache_depth]
         where("#{depth_cache_column} #{operator} ?", depth)

@@ -9,7 +9,7 @@ module Ancestry
     def scope_depth depth_options, depth
       depth_options.inject(self.base_class) do |scope, option|
         scope_name, relative_depth = option
-        if [:before_depth, :to_depth, :at_depth, :from_depth, :after_depth].include? scope_name
+        if Ancestry::DEPTH_SCOPES.keys.include? scope_name
           scope.send scope_name, depth + relative_depth
         else
           raise Ancestry::AncestryException.new("Unknown depth option: #{scope_name}.")
