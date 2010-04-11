@@ -25,7 +25,8 @@ class ActiveRecord::Base
 
     # Create orphan strategy accessor and set to option or default (writer comes from DynamicClassMethods)
     cattr_reader :orphan_strategy
-    self.orphan_strategy = options[:orphan_strategy] || :destroy
+    self.orphan_strategy =
+      options[:orphan_strategy] || Ancestry::DEFAULT_ORPHAN_STRATEGY
 
     # Save self as base class (for STI)
     cattr_accessor :base_class

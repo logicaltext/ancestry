@@ -8,4 +8,8 @@ module Ancestry
     :after_depth  => '>'
   }
 
+  ORPHAN_STRATEGIES = [ :rootify, :restrict, :destroy ]
+
+  DEFAULT_ORPHAN_STRATEGY = :destroy
+
 end

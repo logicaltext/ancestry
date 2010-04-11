@@ -20,7 +20,7 @@ module Ancestry
     # Orphan strategy writer
     def orphan_strategy= orphan_strategy
       # Check value of orphan strategy, only rootify, restrict or destroy is allowed
-      if [:rootify, :restrict, :destroy].include? orphan_strategy
+      if Ancestry::ORPHAN_STRATEGIES.include?(orphan_strategy)
         class_variable_set :@@orphan_strategy, orphan_strategy
       else
         raise Ancestry::AncestryException.new("Invalid orphan strategy, valid ones are :rootify, :restrict and :destroy.")
