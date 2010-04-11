@@ -180,7 +180,7 @@ class ActsAsTreeTest < ActiveSupport::TestCase
     roots.each do |lvl0_node, lvl0_children|
       # Ancestors assertions
       assert_equal [], lvl0_node.ancestor_ids
-      assert_equal [], lvl0_node.ancestors
+      assert_equal [], lvl0_node.ancestors.all
       assert_equal [lvl0_node.id], lvl0_node.path_ids
       assert_equal [lvl0_node], lvl0_node.path
       assert_equal 0, lvl0_node.depth
@@ -193,12 +193,12 @@ class ActsAsTreeTest < ActiveSupport::TestCase
       assert lvl0_node.is_root?
       # Children assertions
       assert_equal lvl0_children.map(&:first).map(&:id), lvl0_node.child_ids
-      assert_equal lvl0_children.map(&:first), lvl0_node.children
+      assert_equal lvl0_children.map(&:first), lvl0_node.children.all
       assert lvl0_node.has_children?
       assert !lvl0_node.is_childless?
       # Siblings assertions
       assert_equal roots.map(&:first).map(&:id), lvl0_node.sibling_ids
-      assert_equal roots.map(&:first), lvl0_node.siblings
+      assert_equal roots.map(&:first), lvl0_node.siblings.all
       assert lvl0_node.has_siblings?
       assert !lvl0_node.is_only_child?
       # Descendants assertions
@@ -206,15 +206,15 @@ class ActsAsTreeTest < ActiveSupport::TestCase
         node.ancestor_ids.include? lvl0_node.id
       end
       assert_equal descendants.map(&:id), lvl0_node.descendant_ids
-      assert_equal descendants, lvl0_node.descendants
-      assert_equal [lvl0_node] + descendants, lvl0_node.subtree
+      assert_equal descendants, lvl0_node.descendants.all
+      assert_equal [lvl0_node] + descendants, lvl0_node.subtree.all
       
       lvl0_children.each do |lvl1_node, lvl1_children|
         # Ancestors assertions
         assert_equal [lvl0_node.id], lvl1_node.ancestor_ids
-        assert_equal [lvl0_node], lvl1_node.ancestors
+        assert_equal [lvl0_node], lvl1_node.ancestors.all
         assert_equal [lvl0_node.id, lvl1_node.id], lvl1_node.path_ids
-        assert_equal [lvl0_node, lvl1_node], lvl1_node.path
+        assert_equal [lvl0_node, lvl1_node], lvl1_node.path.all
         assert_equal 1, lvl1_node.depth
         # Parent assertions
         assert_equal lvl0_node.id, lvl1_node.parent_id
@@ -225,12 +225,12 @@ class ActsAsTreeTest < ActiveSupport::TestCase
         assert !lvl1_node.is_root?
         # Children assertions
         assert_equal lvl1_children.map(&:first).map(&:id), lvl1_node.child_ids
-        assert_equal lvl1_children.map(&:first), lvl1_node.children
+        assert_equal lvl1_children.map(&:first), lvl1_node.children.all
         assert lvl1_node.has_children?
         assert !lvl1_node.is_childless?
         # Siblings assertions
         assert_equal lvl0_children.map(&:first).map(&:id), lvl1_node.sibling_ids
-        assert_equal lvl0_children.map(&:first), lvl1_node.siblings
+        assert_equal lvl0_children.map(&:first), lvl1_node.siblings.all
         assert lvl1_node.has_siblings?
         assert !lvl1_node.is_only_child?
         # Descendants assertions
@@ -238,15 +238,15 @@ class ActsAsTreeTest < ActiveSupport::TestCase
           node.ancestor_ids.include? lvl1_node.id
         end
         assert_equal descendants.map(&:id), lvl1_node.descendant_ids
-        assert_equal descendants, lvl1_node.descendants
-        assert_equal [lvl1_node] + descendants, lvl1_node.subtree
+        assert_equal descendants, lvl1_node.descendants.all
+        assert_equal [lvl1_node] + descendants, lvl1_node.subtree.all
 
         lvl1_children.each do |lvl2_node, lvl2_children|
           # Ancestors assertions
           assert_equal [lvl0_node.id, lvl1_node.id], lvl2_node.ancestor_ids
-          assert_equal [lvl0_node, lvl1_node], lvl2_node.ancestors
+          assert_equal [lvl0_node, lvl1_node], lvl2_node.ancestors.all
           assert_equal [lvl0_node.id, lvl1_node.id, lvl2_node.id], lvl2_node.path_ids
-          assert_equal [lvl0_node, lvl1_node, lvl2_node], lvl2_node.path
+          assert_equal [lvl0_node, lvl1_node, lvl2_node], lvl2_node.path.all
           assert_equal 2, lvl2_node.depth
           # Parent assertions
           assert_equal lvl1_node.id, lvl2_node.parent_id
@@ -257,12 +257,12 @@ class ActsAsTreeTest < ActiveSupport::TestCase
           assert !lvl2_node.is_root?
           # Children assertions
           assert_equal [], lvl2_node.child_ids
-          assert_equal [], lvl2_node.children
+          assert_equal [], lvl2_node.children.all
           assert !lvl2_node.has_children?
           assert lvl2_node.is_childless?
           # Siblings assertions
           assert_equal lvl1_children.map(&:first).map(&:id), lvl2_node.sibling_ids
-          assert_equal lvl1_children.map(&:first), lvl2_node.siblings
+          assert_equal lvl1_children.map(&:first), lvl2_node.siblings.all
           assert lvl2_node.has_siblings?
           assert !lvl2_node.is_only_child?
           # Descendants assertions
@@ -270,8 +270,8 @@ class ActsAsTreeTest < ActiveSupport::TestCase
             node.ancestor_ids.include? lvl2_node.id
           end
           assert_equal descendants.map(&:id), lvl2_node.descendant_ids
-          assert_equal descendants, lvl2_node.descendants
-          assert_equal [lvl2_node] + descendants, lvl2_node.subtree
+          assert_equal descendants, lvl2_node.descendants.all
+          assert_equal [lvl2_node] + descendants, lvl2_node.subtree.all
         end
       end
     end
@@ -291,11 +291,15 @@ class ActsAsTreeTest < ActiveSupport::TestCase
       assert_equal test_node.children, TestNode.children_of(test_node)
       assert_equal test_node.children, TestNode.children_of(test_node.id)
       # Assertions for descendants_of named scope
-      assert_equal test_node.descendants, TestNode.descendants_of(test_node)
-      assert_equal test_node.descendants, TestNode.descendants_of(test_node.id)
+      # Note: InstanceMethods#descendants is an ActiveRecord::Relation, not a
+      # NamedScope, hence the need to append `all` here:
+      assert_equal test_node.descendants.all, TestNode.descendants_of(test_node).all
+      assert_equal test_node.descendants.all, TestNode.descendants_of(test_node.id).all
       # Assertions for subtree_of named scope
-      assert_equal test_node.subtree, TestNode.subtree_of(test_node)
-      assert_equal test_node.subtree, TestNode.subtree_of(test_node.id)
+      # Note: InstanceMethods#subtree is an ActiveRecord::Relation, not a
+      # NamedScope, hence the need to append `all` here:
+      assert_equal test_node.subtree.all, TestNode.subtree_of(test_node).all
+      assert_equal test_node.subtree.all, TestNode.subtree_of(test_node.id).all
       # Assertions for siblings_of named scope
       assert_equal test_node.siblings, TestNode.siblings_of(test_node)
       assert_equal test_node.siblings, TestNode.siblings_of(test_node.id)
@@ -305,12 +309,12 @@ class ActsAsTreeTest < ActiveSupport::TestCase
   def test_ancestroy_column_validation
     node = TestNode.create
     ['3', '10/2', '1/4/30', nil].each do |value|
-      node.write_attribute TestNode.ancestry_column, value
-      node.valid?; assert !node.errors.invalid?(TestNode.ancestry_column)
+      node[TestNode.ancestry_column] = value
+      node.valid?; assert !node.errors[TestNode.ancestry_column].any?
     end
     ['1/3/', '/2/3', 'a', 'a/b', '-34', '/54'].each do |value|
-      node.write_attribute TestNode.ancestry_column, value
-      node.valid?; assert node.errors.invalid?(TestNode.ancestry_column)
+      node[TestNode.ancestry_column] = value
+      node.valid?; assert node.errors[TestNode.ancestry_column].any?
     end
   end
   
@@ -648,10 +652,10 @@ class ActsAsTreeTest < ActiveSupport::TestCase
     node4 = TestNodeSub2.create! :parent => node3
     node5 = TestNodeSub1.create! :parent => node4
     
-    assert_equal [node2, node3, node4, node5], node1.descendants
-    assert_equal [node1, node2, node3, node4, node5], node1.subtree
-    assert_equal [node1, node2, node3, node4], node5.ancestors
-    assert_equal [node1, node2, node3, node4, node5], node5.path
+    assert_equal [node2, node3, node4, node5], node1.descendants.all
+    assert_equal [node1, node2, node3, node4, node5], node1.subtree.all
+    assert_equal [node1, node2, node3, node4], node5.ancestors.all
+    assert_equal [node1, node2, node3, node4, node5], node5.path.all
   end
   
   def test_arrange_order_option
